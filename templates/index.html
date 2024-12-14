@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Map Route Finder</title>
+
+    <!-- Link to Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+
+    <!-- Internal CSS Styling -->
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f7f7f7;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        header {
+            background-color: #0078D4;
+            color: white;
+            padding: 15px 0;
+            width: 100%;
+            text-align: center;
+            font-size: 24px;
+        }
+
+        .container {
+            width: 70%;
+            max-width: 1300px;
+            margin: 20px auto;
+        }
+
+        #map {
+            width: 100%;
+            height: 500px;
+            border-radius: 8px;
+        }
+
+        /* Form styling */
+        form {
+            display: flex;
+            justify-content: flex-start;
+            align-items: center;
+            margin-bottom: 20px;
+            background-color: #fff;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            flex-wrap: nowrap; /* Prevent wrapping of form elements */
+        }
+
+        /* Input fields, buttons, and clear button */
+        input[type="number"], button {
+            padding: 8px;
+            font-size: 14px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            width: 14%; /* Reduced width for inputs and buttons */
+            margin-right: 8px; /* Reduced space between elements */
+        }
+
+        /* Special styling for the clear button */
+        .clear-button {
+            background-color: #ff4d4d;
+        }
+
+        .clear-button:hover {
+            background-color: #e03e3e;
+        }
+
+        button {
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #005f9e;
+            color: white;
+        }
+
+        #loading {
+            display: none;
+            text-align: center;
+            font-size: 18px;
+            font-weight: bold;
+            color: #0078D4;
+            margin-top: 20px;
+        }
+
+        #error {
+            display: none;
+            color: red;
+            text-align: center;
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        .radio-buttons {
+            margin-bottom: 20px;
+        }
+
+        .radio-buttons input {
+            margin-right: 10px;
+        }
+
+        /* Hide or show forms based on radio button selection */
+        .coordinates-form {
+            display: block;
+        }
+
+        .click-map-form {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+<header>Route Finder for Bengaluru</header>
+
+<div class="container">
+    <!-- Radio buttons to choose between Enter Coordinates and Click on Map -->
+    <div class="radio-buttons">
+        <label>
+            <input type="radio" name="input_method" value="coordinates" checked> Enter Coordinates
+        </label>
+        <label>
+            <input type="radio" name="input_method" value="click"> Click on Map (Select Origin and Destination on Map)
+        </label>
+    </div>
+
+    <!-- Form for entering coordinates -->
+    <form id="routeForm" class="coordinates-form">
+        <input type="number" id="origin_lat" placeholder="Origin Latitude" step="any" required> &nbsp;
+        <input type="number" id="origin_lon" placeholder="Origin Longitude" step="any" required>&nbsp;
+        <input type="number" id="dest_lat" placeholder="Destination Latitude" step="any" required>&nbsp;
+        <input type="number" id="dest_lon" placeholder="Destination Longitude" step="any" required>&nbsp;
+        <button type="submit">Get Route</button>
+        <button type="button" id="clearRouteButton" class="clear-button">Clear Route</button>
+    </form>
+
+    <!-- Loading and Error messages -->
+    <div id="loading">Getting the route, please wait...</div>
+    <div id="error"></div>
+    <div id="map"></div>
+</div>
+
+<!-- Leaflet.js Library -->
+<script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+
+<script>
+    var map = L.map('map').setView([12.9716, 77.5946], 12);  // Center on Bengaluru
+
+    // Add tile layer to map
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+
+    var clickedPoints = [];  // Store the clicked points
+    var routeLine = null;  // Store the route line
+    var markers = [];  // Store the markers
+
+    // Function to handle click event on the map (for 'Click on Map' method)
+    map.on('click', function(e) {
+        if (document.querySelector('input[name="input_method"]:checked').value === 'click') {
+            if (clickedPoints.length < 2) {
+                clickedPoints.push(e.latlng);  // Add the clicked point to the array
+
+                // Mark the clicked point on the map
+                var marker = L.marker(e.latlng).addTo(map);
+                markers.push(marker);  // Store the marker for later removal
+
+                // If two points are clicked, calculate the route
+                if (clickedPoints.length === 2) {
+                    var origin_lat = clickedPoints[0].lat;
+                    var origin_lon = clickedPoints[0].lng;
+                    var dest_lat = clickedPoints[1].lat;
+                    var dest_lon = clickedPoints[1].lng;
+
+                    // Display loading message
+                    document.getElementById('loading').style.display = 'block';
+                    document.getElementById('error').style.display = 'none';
+
+                    // Send coordinates to backend
+                    fetch('/get_route', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        },
+                        body: `origin_lat=${origin_lat}&origin_lon=${origin_lon}&dest_lat=${dest_lat}&dest_lon=${dest_lon}`
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        document.getElementById('loading').style.display = 'none';
+                        if (data.route_coords && data.route_coords.length > 0) {
+                            map.eachLayer(function(layer) {
+                                if (layer instanceof L.Polyline) {
+                                    map.removeLayer(layer);
+                                }
+                            });
+                            routeLine = L.polyline(data.route_coords, { color: '#0066cc' }).addTo(map);
+                            map.fitBounds(routeLine.getBounds());
+                        } else {
+                            alert("No valid route found.");
+                        }
+                        clickedPoints = [];
+                    })
+                    .catch(error => {
+                        console.error("Error:", error);
+                        document.getElementById('loading').style.display = 'none';
+                        document.getElementById('error').style.display = 'block';
+                        document.getElementById('error').innerText = "Error fetching the route!";
+                    });
+                }
+            } else {
+                clickedPoints = [];
+                alert("Click origin and destination points again.");
+            }
+        }
+    });
+
+    // Submit form to get route (for 'Enter Coordinates' method)
+    document.getElementById('routeForm').onsubmit = async function(e) {
+        e.preventDefault();
+
+        if (document.querySelector('input[name="input_method"]:checked').value === 'coordinates') {
+            let origin_lat = document.getElementById('origin_lat').value;
+            let origin_lon = document.getElementById('origin_lon').value;
+            let dest_lat = document.getElementById('dest_lat').value;
+            let dest_lon = document.getElementById('dest_lon').value;
+
+            // Display loading message
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('error').style.display = 'none';
+
+            try {
+                let response = await fetch('/get_route', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: `origin_lat=${origin_lat}&origin_lon=${origin_lon}&dest_lat=${dest_lat}&dest_lon=${dest_lon}`
+                });
+
+                if (response.ok) {
+                    let data = await response.json();
+                    document.getElementById('loading').style.display = 'none';
+
+                    if (data.route_coords && data.route_coords.length > 0) {
+                        map.eachLayer(function(layer) {
+                            if (layer instanceof L.Polyline) {
+                                map.removeLayer(layer);
+                            }
+                        });
+                        routeLine = L.polyline(data.route_coords, { color: '#0066cc' }).addTo(map);
+                        map.fitBounds(routeLine.getBounds());
+                    } else {
+                        alert("No valid route found.");
+                    }
+                } else {
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('error').style.display = 'block';
+                    document.getElementById('error').innerText = "Error fetching the route!";
+                }
+            } catch (error) {
+                console.error("Error:", error);
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('error').style.display = 'block';
+                document.getElementById('error').innerText = "An error occurred!";
+            }
+        }
+    };
+
+    // Clear route and markers
+    document.getElementById('clearRouteButton').onclick = function() {
+        if (routeLine) {
+            map.removeLayer(routeLine);
+            routeLine = null;
+        }
+        markers.forEach(function(marker) {
+            map.removeLayer(marker);
+        });
+        markers = [];
+    };
+
+    // Add event listener to radio buttons to toggle form visibility
+    document.querySelectorAll('input[name="input_method"]').forEach(function(radio) {
+        radio.addEventListener('change', function() {
+            if (radio.value === 'coordinates') {
+                document.querySelector('.coordinates-form').style.display = 'block';
+                document.querySelector('.click-map-form').style.display = 'none';
+            } else {
+                document.querySelector('.coordinates-form').style.display = 'none';
+                document.querySelector('.click-map-form').style.display = 'block';
+            }
+        });
+    });
+</script>
+
+</body>
+</html>
