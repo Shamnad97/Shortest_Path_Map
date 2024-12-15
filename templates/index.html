@@ -184,9 +184,10 @@
                     // Display loading message
                     document.getElementById('loading').style.display = 'block';
                     document.getElementById('error').style.display = 'none';
-
+                    
                     // Send coordinates to backend
-                    fetch('/get_route', {
+                    // fetch('/get_route', {
+                    fetch('https://shortest-path-map.onrender.com/get_route', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/x-www-form-urlencoded'
