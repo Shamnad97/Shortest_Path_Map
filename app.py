@@ -1,8 +1,11 @@
 from flask import Flask, render_template, request, jsonify
 import osmnx as ox
 import networkx as nx
+from flask_cors import CORS
 
 app = Flask(__name__)
+
+CORS(app)
 
 # Function to calculate the shortest path
 def calculate_shortest_path(origin_lat, origin_lon, dest_lat, dest_lon):
